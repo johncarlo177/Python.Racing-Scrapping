@@ -24,6 +24,7 @@ FILE_NAME = 'Race Meetings.xlsm'
 target_column = 23
 ALLOWED_MEETINGS = ['(VIC)', '(NSW)', '(QLD)', '(SA)', '(WA)', '(NT)', '(TAS)', '(ACT)', '(NZ)', '(NZL)']
 FS = {}
+SR = {}
 
 # def setup_driver():
 #     options = Options()
@@ -85,6 +86,39 @@ def find_all_races(html):
 
     return meetings_names, rounds_links
 
+def extract_sky_rating(driver, url, meetings_names):
+    global SR
+    meeting_name = url.split('/')[3]
+
+    if meeting_name.lower().replace('-', ' ') in meetings_names:
+        SR.setdefault(meeting_name, {})
+
+        try:
+            driver.get(BASE_URL + url)
+        except:
+            driver.execute_script("window.stop()")
+
+        time.sleep(2)
+        html = driver.page_source
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Each horse row
+        rows = soup.select("div.row")
+
+        for row in rows:
+            try:
+                horse_name = row.select_one("div.runner-name").get_text(strip=True)
+                horse_name = horse_name.split("(")[0].strip()
+
+                # Sky Rating is inside a <div> with a numeric value
+                sr_column = row.find("div", string=re.compile(r"^\d+$"))
+                if sr_column:
+                    sky_rating = sr_column.get_text(strip=True)
+                    SR[meeting_name][horse_name] = sky_rating
+                    print("Sky:", meeting_name, horse_name, sky_rating)
+
+            except Exception:
+                continue
 
 def extract_FS(driver, url, meetings_names):
     global FS
@@ -135,6 +169,7 @@ def get_meetings(driver, url):
 
     for i in range(rounds_links.__len__()):
         extract_FS(driver, rounds_links[i], meetings_names)
+        extract_sky_rating(driver, rounds_links[i], meetings_names)
     
 
 def merge_excel(excel_file, FS):
@@ -145,21 +180,25 @@ def merge_excel(excel_file, FS):
     normalized_sheet_map = {normalize(name): name for name in workbook.sheetnames}
 
     # Loop through sample_data and find best matching sheet
-    for raw_sheet_name, horses in FS.items():
+    # Insert Sky Rating into Column 24 (adjust as needed)
+    sky_rating_column = 24  
+
+    for raw_sheet_name, horses in SR.items():
         norm_name = normalize(raw_sheet_name)
         actual_sheet_name = normalized_sheet_map.get(norm_name)
 
         if actual_sheet_name:
             sheet = workbook[actual_sheet_name]
-            print(f"Working on sheet: {actual_sheet_name}")
+            print(f"Writing Sky Ratings into sheet: {actual_sheet_name}")
 
             for row in sheet.iter_rows(min_row=1):
                 for cell in row:
                     horse_name = str(cell.value).strip() if cell.value else ""
+
                     if horse_name in horses:
-                        score = horses[horse_name]
-                        sheet.cell(row=cell.row, column=23, value=score)  # Column W = 23
-                        print(f"Inserted {score} for '{horse_name}' in row {cell.row}, col W")
+                        sky = horses[horse_name]
+                        sheet.cell(row=cell.row, column=sky_rating_column, value=sky)
+                        print(f"Inserted Sky Rating {sky} for '{horse_name}' in row {cell.row}")
         else:
             print(f"No matching sheet found for '{raw_sheet_name}'")
 
