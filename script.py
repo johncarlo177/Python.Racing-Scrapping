@@ -177,32 +177,68 @@ def merge_excel(excel_file, FS):
 
     def normalize(name):
         return name.strip().lower().replace("-", " ")
-    normalized_sheet_map = {normalize(name): name for name in workbook.sheetnames}
 
-    # Loop through sample_data and find best matching sheet
-    # Insert Sky Rating into Column 24 (adjust as needed)
-    sky_rating_column = 24  
+    normalized_sheet_map = {normalize(name): name for name in workbook.sheetnames}
 
     for raw_sheet_name, horses in SR.items():
         norm_name = normalize(raw_sheet_name)
         actual_sheet_name = normalized_sheet_map.get(norm_name)
 
-        if actual_sheet_name:
-            sheet = workbook[actual_sheet_name]
-            print(f"Writing Sky Ratings into sheet: {actual_sheet_name}")
-
-            for row in sheet.iter_rows(min_row=1):
-                for cell in row:
-                    horse_name = str(cell.value).strip() if cell.value else ""
-
-                    if horse_name in horses:
-                        sky = horses[horse_name]
-                        sheet.cell(row=cell.row, column=sky_rating_column, value=sky)
-                        print(f"Inserted Sky Rating {sky} for '{horse_name}' in row {cell.row}")
-        else:
+        if not actual_sheet_name:
             print(f"No matching sheet found for '{raw_sheet_name}'")
+            continue
+
+        sheet = workbook[actual_sheet_name]
+        print(f"Working on sheet: {actual_sheet_name}")
+
+        # ---------------------------------------------
+        # FIND HEADER COLUMNS
+        # ---------------------------------------------
+        sky_rating_col = None
+        result_col = None
+
+        header_row = 1
+        for col in range(1, sheet.max_column + 1):
+            cell_value = str(sheet.cell(row=header_row, column=col).value or "").strip()
+
+            if cell_value.lower() == "sky rating":
+                sky_rating_col = col
+
+            if cell_value.lower() == "result":
+                result_col = col
+
+        # ---------------------------------------------
+        # IF SKY RATING COLUMN DOES NOT EXIST → CREATE IT
+        # ---------------------------------------------
+        if sky_rating_col is None:
+            if result_col is None:
+                raise Exception("ERROR: Could not find 'Result' column to insert before!")
+
+            # Insert a new column BEFORE "Result"
+            sheet.insert_cols(result_col)
+            sky_rating_col = result_col
+
+            # Write header
+            sheet.cell(row=header_row, column=sky_rating_col, value="Sky Rating")
+            print(f"Created new 'Sky Rating' column at position {sky_rating_col}")
+
+        else:
+            print(f"'Sky Rating' column found at position {sky_rating_col}")
+
+        # ---------------------------------------------
+        # WRITE SKY RATING VALUES
+        # ---------------------------------------------
+        for row in sheet.iter_rows(min_row=2):  # skip header row
+            horse_cell = row[0]  # assume horse names are in column 1? If not, adjust
+
+            horse_name = str(horse_cell.value).strip() if horse_cell.value else ""
+            if horse_name in horses:
+                sky = horses[horse_name]
+                sheet.cell(row=horse_cell.row, column=sky_rating_col, value=sky)
+                print(f"Inserted Sky Rating {sky} for '{horse_name}' in row {horse_cell.row}")
 
     workbook.save(filename=excel_file)
+    print("Excel updated successfully.")
 
 
 def main():
