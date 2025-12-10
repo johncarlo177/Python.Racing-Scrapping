@@ -16,8 +16,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 ua = UserAgent()
 USER_AGENT = ua.random
-# ChromeDriverPath = "C:/chromedriver/chromedriver.exe"
-ChromeDriverPath = "/usr/local/bin/chromedriver"
+ChromeDriverPath = "C:/chromedriver/chromedriver.exe"
 
 BASE_URL = 'https://www.tab.com.au'
 FILE_NAME = 'Race Meetings.xlsm'
@@ -26,30 +25,9 @@ ALLOWED_MEETINGS = ['(VIC)', '(NSW)', '(QLD)', '(SA)', '(WA)', '(NT)', '(TAS)', 
 FS = {}
 SR = {}
 
-# def setup_driver():
-#     options = Options()
-#     options.headless = True
-#     options.add_argument("--disable-images")
-#     options.add_argument("--start-maximized")
-#     options.add_argument("--disable-popup-blocking")
-#     options.add_argument(f"--user-agent={USER_AGENT}")
-#     options.add_argument("--disable-blink-features=AutomationControlled")
-#     options.add_argument("--disable-dev-shm-usage")
-#     options.add_argument("--disable-gpu")
-#     options.add_argument("--no-sandbox")
-#     options.add_argument("--no-first-run")
-
-#     service = Service(ChromeDriverPath)
-#     driver = webdriver.Chrome(service=service, options=options)
-#     driver.set_page_load_timeout(500)
-#     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    
-#     return driver
-
 def setup_driver():
-    from webdriver_manager.chrome import ChromeDriverManager
     options = Options()
-    options.add_argument("--headless=new")
+    options.headless = True
     options.add_argument("--disable-images")
     options.add_argument("--start-maximized")
     options.add_argument("--disable-popup-blocking")
@@ -60,13 +38,12 @@ def setup_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--no-first-run")
 
-    service = Service(ChromeDriverManager().install())
+    service = Service(ChromeDriverPath)
     driver = webdriver.Chrome(service=service, options=options)
-
     driver.set_page_load_timeout(500)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
     return driver
-
 
 
 def find_all_races(html):
@@ -164,8 +141,20 @@ def get_meetings(driver, url):
     except:
         driver.execute_script("window.stop()")
 
+    # WAIT for meeting cards
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-testid='meeting']"))
+        )
+    except:
+        print("❌ ERROR: TAB meetings did not load.")
+        html = driver.page_source
+        # print(html)
+        return
+
     html = driver.page_source
     meetings_names, rounds_links = find_all_races(html=html)
+
 
     for i in range(rounds_links.__len__()):
         extract_FS(driver, rounds_links[i], meetings_names)
