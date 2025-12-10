@@ -37,14 +37,14 @@ def setup_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--no-first-run")
+    options.add_argument("--disable-site-isolation-trials")
 
     service = Service(ChromeDriverPath)
     driver = webdriver.Chrome(service=service, options=options)
-    driver.set_page_load_timeout(500)
+    driver.set_page_load_timeout(800)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
     return driver
-
 
 def find_all_races(html):
     soup = BeautifulSoup(html, 'html.parser')
@@ -69,32 +69,36 @@ def extract_sky_rating(driver, url, meetings_names):
 
     if meeting_name.lower().replace('-', ' ') in meetings_names:
         SR.setdefault(meeting_name, {})
-
         try:
             driver.get(BASE_URL + url)
         except:
             driver.execute_script("window.stop()")
 
-        time.sleep(2)
+        time.sleep(5)
         html = driver.page_source
         soup = BeautifulSoup(html, "html.parser")
 
         # Each horse row
-        rows = soup.select("div.row")
+        rows = soup.select("div.row")  # Debug print
 
         for row in rows:
             try:
-                horse_name = row.select_one("div.runner-name").get_text(strip=True)
-                horse_name = horse_name.split("(")[0].strip()
+                horse_el = row.select_one("div.runner-name")
+                if not horse_el:
+                    continue
 
+                horse_name = horse_el.get_text(strip=True).split("(")[0].strip()
                 # Sky Rating is inside a <div> with a numeric value
-                sr_column = row.find("div", string=re.compile(r"^\d+$"))
-                if sr_column:
-                    sky_rating = sr_column.get_text(strip=True)
-                    SR[meeting_name][horse_name] = sky_rating
-                    print("Sky:", meeting_name, horse_name, sky_rating)
+                rating_el = row.select_one("div.runner-rating-cell span")
+                if rating_el:
+                    sky_rating = rating_el.get_text(strip=True)
 
-            except Exception:
+                    if sky_rating.isdigit():
+                        SR[meeting_name][horse_name] = sky_rating
+                        print("Sky Ratinggggggggggggggggg:", meeting_name, horse_name, sky_rating)
+
+            except Exception as e:
+                print(f"Error extracting horse data: {e}")  # Log any errors
                 continue
 
 def extract_FS(driver, url, meetings_names):
@@ -143,11 +147,11 @@ def get_meetings(driver, url):
 
     # WAIT for meeting cards
     try:
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-testid='meeting']"))
         )
     except:
-        print("❌ ERROR: TAB meetings did not load.")
+        print(" ERROR: TAB meetings did not load.")
         html = driver.page_source
         # print(html)
         return
@@ -159,6 +163,16 @@ def get_meetings(driver, url):
     for i in range(rounds_links.__len__()):
         extract_FS(driver, rounds_links[i], meetings_names)
         extract_sky_rating(driver, rounds_links[i], meetings_names)
+
+    # Process only the first round link for testing
+    # if rounds_links:
+    #     first_round_link = rounds_links[0]
+    #     print(f"Processing first round link: {first_round_link}")
+
+    #     extract_FS(driver, first_round_link, meetings_names)
+    #     extract_sky_rating(driver, first_round_link, meetings_names)
+    # else:
+    #     print(" No rounds found to process.")
     
 
 def merge_excel(excel_file, FS):
@@ -180,9 +194,7 @@ def merge_excel(excel_file, FS):
         sheet = workbook[actual_sheet_name]
         print(f"Working on sheet: {actual_sheet_name}")
 
-        # ---------------------------------------------
         # FIND HEADER COLUMNS
-        # ---------------------------------------------
         sky_rating_col = None
         result_col = None
 
@@ -196,9 +208,7 @@ def merge_excel(excel_file, FS):
             if cell_value.lower() == "result":
                 result_col = col
 
-        # ---------------------------------------------
         # IF SKY RATING COLUMN DOES NOT EXIST → CREATE IT
-        # ---------------------------------------------
         if sky_rating_col is None:
             if result_col is None:
                 raise Exception("ERROR: Could not find 'Result' column to insert before!")
@@ -214,9 +224,7 @@ def merge_excel(excel_file, FS):
         else:
             print(f"'Sky Rating' column found at position {sky_rating_col}")
 
-        # ---------------------------------------------
         # WRITE SKY RATING VALUES
-        # ---------------------------------------------
         for row in sheet.iter_rows(min_row=2):  # skip header row
             horse_cell = row[0]  # assume horse names are in column 1? If not, adjust
 
